@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>XP-Q90EC 藍牙列印 - 預購出單系統</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  
+  <!-- 核心：載入 CP936 (GBK) 編碼庫以解決熱感應印表機中文亂碼問題 -->
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/cpexcel.js"></script>
+
+  <style>
+    body {
+      font-family: 'Noto Sans TC', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      background-color: #0f172a;
+      color: #f1f5f9;
+    }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+  </style>
+</head>
+<body class="min-h-screen pb-12 selection:bg-indigo-500 selection:text-white">
+  
+  <div class="max-w-md mx-auto p-4 flex flex-col gap-5">
+    
+    <!-- 標頭卡片 -->
+    <header class="bg-slate-800/80 backdrop-blur border border-slate-700 rounded-2xl p-4 shadow-xl">
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center shadow-lg shadow-amber-500/30">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
+            </svg>
+          </div>
+          <div>
+            <h1 class="text-lg font-bold tracking-tight text-white">預購出單 POS 系統</h1>
+            <p class="text-[11px] text-emerald-400 font-mono">編碼: CP936 | 設備: XP-Q90EC</p>
+          </div>
+        </div>
+        <div id="connStatus" class="flex flex-col items-end">
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-500/20 text-rose-400 border border-rose-500/30 shadow-inner">
+            <span class="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+            未連線
+          </span>
+        </div>
+      </div>
+    </header>
+
+    <!-- 藍牙控制區 -->
+    <section class="bg-slate-800 border border-slate-700 rounded-2xl p-4 shadow-lg flex flex-col gap-3">
+      <h2 class="text-sm font-semibold text-slate-300">藍牙裝置控制</h2>
+      <div class="grid grid-cols-2 gap-3">
+        <button id="btnConnect" onclick="connectPrinter()" class="w-full py-3 px-2 bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition-all rounded-xl font-medium text-sm text-white shadow-md shadow-indigo-600/25 flex items-center justify-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+          搜尋並連線
+        </button>
+        <button id="btnDisconnect" onclick="disconnectPrinter()" disabled class="w-full py-3 px-2 bg-slate-700/80 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all rounded-xl font-medium text-sm text-slate-300 flex items-center justify-center gap-1">
+          中斷連線
+        </button>
+      </div>
+      <p id="btSupportNotice" class="text-[11px] text-slate-400 text-center font-mono mt-1">環境檢查中...</p>
+    </section>
+
+    <!-- 預購單列印操作區 -->
+    <section class="bg-gradient-to-br from-slate-800 to-amber-900/30 border border-amber-500/30 rounded-2xl p-5 shadow-lg flex flex-col items-center">
+      <div class="mb-4 w-full">
+        <div class="flex justify-between items-end border-b border-slate-700 pb-2 mb-3">
+          <h3 class="text-lg font-bold text-white">咩味時刻工作室</h3>
+          <span class="text-xs text-amber-400 font-mono">預購保留單</span>
+        </div>
+        
+        <!-- 模擬的預購訂單資料，實務上可透過表單或 API 帶入 -->
+        <div class="text-xs text-slate-300 font-mono space-y-1 mb-4 bg-slate-900 p-3 rounded-lg">
+          <p>單號：<span id="orderNo" class="text-white">PO-20261003-001</span></p>
+          <p>客戶：<span class="text-white">王小明 先生 (0912***456)</span></p>
+          <p>預計取貨：<span class="text-emerald-400">2026/10/05 14:00</span></p>
+        </div>
+      </div>
+      
+      <button onclick="printPreOrderReceipt()" class="w-full py-4 px-4 bg-amber-600 hover:bg-amber-500 active:scale-95 text-white rounded-xl font-bold text-base shadow-lg shadow-amber-600/30 flex items-center justify-center gap-2 transition-all">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+        </svg>
+        列印預購單據
+      </button>
+    </section>
+
+    <!-- 系統日誌 -->
+    <section class="bg-slate-800 border border-slate-700 rounded-2xl p-4 shadow-lg flex flex-col gap-2 h-48">
+      <div class="flex items-center justify-between pb-2 border-b border-slate-700/50">
+        <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-amber-400"></span> 執行日誌
+        </span>
+        <button onclick="clearLogs()" class="text-[11px] text-slate-400 hover:text-white transition-colors">清除</button>
+      </div>
+      <div id="logConsole" class="flex-1 overflow-y-auto text-[11px] font-mono space-y-1 pr-1">
+        <!-- 紀錄會顯示在此 -->
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    // --- 藍牙狀態 ---
+    let bluetoothDevice = null;
+    let bluetoothServer = null;
+    let printerCharacteristic = null;
+
+    // 熱感應印表機常見的 UUID
+    const SERVICE_UUIDS = [
+      '000018f0-0000-1000-8000-00805f9b34fb', // Standard POS Service
+      '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC
+      'e7810a71-73ae-499d-8c15-faa9aef0c3f2'
+    ];
+    
+    const CHUNK_SIZE = 100; // MTU 安全切塊大小
+
+    // --- 日誌工具 ---
+    function log(msg, type = 'info') {
+      const consoleEl = document.getElementById('logConsole');
+      const time = new Date().toLocaleTimeString('en-US', { hour12: false, fractionalSecondDigits: 2 });
+      
+      const div = document.createElement('div');
+      let colorClass = 'text-slate-300';
+      if (type === 'error') colorClass = 'text-rose-400 font-bold';
+      if (type === 'success') colorClass = 'text-emerald-400';
+      if (type === 'warn') colorClass = 'text-amber-300';
+      
+      div.className = `${colorClass} leading-tight break-all pb-1`;
+      div.innerHTML = `<span class="text-slate-500">[${time}]</span> ${msg}`;
+      
+      consoleEl.appendChild(div);
+      consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+
+    function clearLogs() {
+      document.getElementById('logConsole').innerHTML = '';
+      log('日誌已清除');
+    }
+
+    // --- 初始化檢查 ---
+    window.onload = function() {
+      const notice = document.getElementById('btSupportNotice');
+      if (navigator.bluetooth) {
+        notice.textContent = '✔️ Web Bluetooth API 已就緒';
+        notice.className = 'text-[11px] text-emerald-400 text-center font-mono mt-1';
+        log('藍牙環境檢查通過');
+      } else {
+        notice.textContent = '❌ 瀏覽器不支援 Web Bluetooth';
+        notice.className = 'text-[11px] text-rose-400 text-center font-mono mt-1';
+        log('錯誤：請在 iOS 使用 Bluefy 或 Android Chrome 開啟此網頁', 'error');
+      }
+
+      if (typeof cptable !== 'undefined') {
+        log('CP936 編碼庫 (cpexcel.js) 載入成功', 'success');
+      } else {
+        log('警告：CP936 編碼庫尚未載入', 'error');
+      }
+    };
+
+    // --- 藍牙連線邏輯 ---
+    async function connectPrinter() {
+      if (!navigator.bluetooth) {
+        alert("請使用支援 Web Bluetooth 的瀏覽器。");
+        return;
+      }
+
+      try {
+        log('請求藍牙裝置配對 (請選擇 XP-Q90EC)...');
+        bluetoothDevice = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [...SERVICE_UUIDS, 'generic_access']
+        });
+
+        log(`已選擇: ${bluetoothDevice.name || 'Unknown Device'}`, 'success');
+        bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+        log('正在連接 GATT 伺服器...');
+        bluetoothServer = await bluetoothDevice.gatt.connect();
+        
+        log('正在尋找寫入特徵值 (Characteristic)...');
+        printerCharacteristic = await findWritableCharacteristic(bluetoothServer);
+
+        if (printerCharacteristic) {
+          updateUI(true);
+          log('✅ 印表機連線準備就緒！', 'success');
+        } else {
+          throw new Error('未找到支援寫入的藍牙特徵值');
+        }
+      } catch (err) {
+        log(`連線失敗: ${err.message}`, 'error');
+        updateUI(false);
+      }
+    }
+
+    async function findWritableCharacteristic(server) {
+      for (let uuid of SERVICE_UUIDS) {
+        try {
+          const service = await server.getPrimaryService(uuid);
+          const chars = await service.getCharacteristics();
+          for (let char of chars) {
+            if (char.properties.write || char.properties.writeWithoutResponse) {
+              log(`找到寫入點 (Service: ${uuid.split('-')[0]})`);
+              return char;
+            }
+          }
+        } catch(e) {}
+      }
+      
+      try {
+        const services = await server.getPrimaryServices();
+        for (let service of services) {
+          const chars = await service.getCharacteristics();
+          for (let char of chars) {
+            if (char.properties.write || char.properties.writeWithoutResponse) {
+              log(`找到寫入點 (Fallback UUID: ${char.uuid})`);
+              return char;
+            }
+          }
+        }
+      } catch(e) {}
+      return null;
+    }
+
+    function onDisconnected() {
+      log('藍牙連線已中斷', 'warn');
+      updateUI(false);
+      bluetoothServer = null;
+      printerCharacteristic = null;
+    }
+
+    function disconnectPrinter() {
+      if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+        log('正在手動中斷連線...');
+        bluetoothDevice.gatt.disconnect();
+      }
+    }
+
+    function updateUI(isConnected) {
+      const statusDiv = document.getElementById('connStatus');
+      const btnConnect = document.getElementById('btnConnect');
+      const btnDisconnect = document.getElementById('btnDisconnect');
+
+      if (isConnected) {
+        statusDiv.innerHTML = `
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-inner">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> 已連線
+          </span>`;
+        btnConnect.classList.add('opacity-50', 'pointer-events-none');
+        btnDisconnect.disabled = false;
+      } else {
+        statusDiv.innerHTML = `
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-500/20 text-rose-400 border border-rose-500/30 shadow-inner">
+            <span class="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span> 未連線
+          </span>`;
+        btnConnect.classList.remove('opacity-50', 'pointer-events-none');
+        btnDisconnect.disabled = true;
+      }
+    }
+
+    // --- 列印與排版邏輯 ---
+
+    // 字串長度計算 (中文字算2，英數字算1)，用於對齊
+    function getStringWidth(str) {
+      let len = 0;
+      for (let i = 0; i < str.length; i++) {
+        if (str.charCodeAt(i) > 255) len += 2;
+        else len += 1;
+      }
+      return len;
+    }
+
+    // 靠右補齊空格
+    function padRight(str, totalWidth) {
+      const len = getStringWidth(str);
+      return len >= totalWidth ? str : str + ' '.repeat(totalWidth - len);
+    }
+
+    // 靠左補齊空格
+    function padLeft(str, totalWidth) {
+      const len = getStringWidth(str);
+      return len >= totalWidth ? str : ' '.repeat(totalWidth - len) + str;
+    }
+
+    // 將字串轉為 CP936 (GBK) 的 Uint8Array
+    function encodeToCP936(text) {
+      if (typeof cptable === 'undefined') throw new Error("CP936 編碼庫未載入");
+      const encoded = cptable.utils.encode(936, text);
+      return new Uint8Array(encoded);
+    }
+
+    // 分塊傳送藍牙資料
+    async function sendRawBytes(payloadBytes) {
+      if (!printerCharacteristic) {
+        alert("請先連線至印表機");
+        return false;
+      }
+
+      const total = payloadBytes.length;
+      let offset = 0;
+      
+      log(`開始列印，資料大小: ${total} bytes...`);
+
+      try {
+        while (offset < total) {
+          const chunk = payloadBytes.slice(offset, offset + CHUNK_SIZE);
+          
+          if (printerCharacteristic.properties.writeWithoutResponse) {
+            await printerCharacteristic.writeValueWithoutResponse(chunk);
+          } else {
+            await printerCharacteristic.writeValue(chunk);
+          }
+          
+          offset += CHUNK_SIZE;
+          await new Promise(resolve => setTimeout(resolve, 20)); // 硬體緩衝時間
+        }
+        log(`✅ 列印指令傳送完成`, 'success');
+        return true;
+      } catch (err) {
+        log(`❌ 傳送失敗: ${err.message}`, 'error');
+        return false;
+      }
+    }
+
+    // 產生並列印預購出單
+    async function printPreOrderReceipt() {
+      if (!printerCharacteristic) {
+        log('請先點擊「搜尋並連線」', 'warn');
+        return;
+      }
+
+      try {
+        log('建構 ESC/POS 預購單指令...');
+        const payload = [];
+        const addBytes = (arr) => { for(let i=0; i<arr.length; i++) payload.push(arr[i]); };
+
+        // 1. 系統設定
+        addBytes([0x1B, 0x40]); // 初始化印表機 (ESC @)
+        addBytes([0x1C, 0x26]); // 啟用漢字模式 (FS &) -> 預防中文亂碼關鍵
+
+        // 2. 標頭 (置中)
+        addBytes([0x1B, 0x61, 0x01]); // 置中對齊
+        
+        // 可選：放大字體 ESC ! 17 (0x1B, 0x21, 0x11)
+        // 為了相容性安全，這裡採用基本字體加上分隔線設計
+        const headerStr = 
+          "================================\n" +
+          "         咩味時刻工作室         \n" +
+          "       [ 預 購 保 留 單 ]       \n" +
+          "================================\n";
+        addBytes(encodeToCP936(headerStr));
+
+        // 3. 訂單資訊 (靠左)
+        addBytes([0x1B, 0x61, 0x00]); // 靠左對齊
+
+        const now = new Date();
+        const timeStr = `${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+        
+        const infoStr = 
+          `單號：PO-20261003-001\n` +
+          `建檔：${timeStr}\n` +
+          `客戶：王小明 先生 (0912***456)\n` +
+          `取貨：2026/10/05 下午 14:00\n` +
+          "--------------------------------\n";
+        addBytes(encodeToCP936(infoStr));
+
+        // 4. 商品列表排版 (假設寬度為32字元)
+        // 品名(16) | 數量(6) | 金額(10)
+        let itemsStr = padRight("品名", 16) + padRight("數量", 6) + padLeft("金額", 10) + "\n";
+        
+        // 模擬兩筆商品資料
+        itemsStr += padRight("原味山羊乳(瓶)", 16) + padRight("2", 6) + padLeft("300", 10) + "\n";
+        itemsStr += padRight("草莓山羊乳(瓶)", 16) + padRight("1", 6) + padLeft("160", 10) + "\n";
+        itemsStr += "--------------------------------\n";
+        
+        // 5. 總計與狀態
+        itemsStr += padRight("總計：", 20) + padLeft("NT$ 460", 12) + "\n";
+        itemsStr += padRight("狀態：", 20) + padLeft("已付清", 12) + "\n";
+        itemsStr += "================================\n";
+        addBytes(encodeToCP936(itemsStr));
+
+        // 6. 頁尾備註 (置中)
+        addBytes([0x1B, 0x61, 0x01]); // 置中對齊
+        const footerStr = 
+          "* 請憑此單於約定時間取貨 *\n" +
+          "感謝您對咩味時刻的支持\n\n\n\n";
+        addBytes(encodeToCP936(footerStr));
+
+        // 7. 切紙指令
+        addBytes([0x1D, 0x56, 0x42, 0x00]); // 部分切刀 (GS V 66 0)
+
+        // 傳送緩衝區
+        const finalBuffer = new Uint8Array(payload);
+        await sendRawBytes(finalBuffer);
+        
+      } catch (error) {
+        log(`列印錯誤: ${error.message}`, 'error');
+      }
+    }
+  </script>
+</body>
+</html>
